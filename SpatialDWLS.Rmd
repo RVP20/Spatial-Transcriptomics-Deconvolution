@@ -1,6 +1,6 @@
 ---
 title: "SpatialDWLS"
-output: html_notebook
+output: github_document
 ---
 Part 1: Downloading Required Libraries and setting up path.
 
