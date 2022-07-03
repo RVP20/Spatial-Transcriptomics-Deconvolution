@@ -1,0 +1,98 @@
+---
+title: "SpatialDWLS DestVI Simulation Data"
+output: html_notebook
+---
+```{r}
+library(Giotto)
+library(data.table)
+library(anndata)
+setwd("/Users/tanushkumar/Dropbox/ST_Project/")
+python_path<-"/Users/tanushkumar/Library/r-miniconda/envs/r-reticulate/bin/python"
+instrs = createGiottoInstructions(python_path = python_path)
+```
+```{r}
+transpose_dgRMatrix <- function(inmat) {
+  if(class(inmat) != 'dgRMatrix')
+    stop('inmat is not of class dgRMatrix')
+  out <- new('dgCMatrix',
+             i=inmat@j,
+             p=inmat@p,
+             x=inmat@x,
+             Dim=rev(inmat@Dim),
+             Dimnames=rev(inmat@Dimnames)
+  )
+  out
+} 
+```
+```{r}
+st_data<-read_h5ad("SimulatedData/st_simu.h5ad")
+st_data<-as.matrix(st_data)
+st_data<-transpose_dgRMatrix(st_data)
+st_data<-as(st_data,"dgTMatrix")
+```
+```{r}
+visium_brain <- createGiottoObject(raw_exprs = st_data,instructions = instrs,)
+metadata = pDataDT(visium_brain)
+visium_brain <- filterGiotto(gobject = visium_brain,
+                             expression_threshold = 1,
+                             gene_det_in_min_cells = 50,
+                             expression_values = c('raw'),
+                             verbose = T)
+```
+```{r}
+visium_brain <- normalizeGiotto(gobject = visium_brain)
+visium_brain <- calculateHVG(gobject = visium_brain)
+```
+```{r}
+gene_metadata = fDataDT(visium_brain)
+featgenes = gene_metadata[hvg == 'yes']$gene_ID
+visium_brain <- runPCA(gobject = visium_brain, genes_to_use = featgenes, scale_unit = F)
+signPCA(visium_brain, genes_to_use = featgenes, scale_unit = F)
+visium_brain <- runUMAP(visium_brain, dimensions_to_use = 1:10)
+visium_brain <- createNearestNetwork(gobject = visium_brain, dimensions_to_use = 1:10, k = 15)
+visium_brain <- doLeidenCluster(gobject = visium_brain, resolution = 0.4, n_iterations = 1000)
+plotUMAP(gobject = visium_brain, cell_color = 'leiden_clus', show_NN_network = T, point_size = 2)
+```
+```{r}
+sc_data<-read_h5ad("SimulatedData/sc_simu.h5ad")
+sc_data<-as.matrix(sc_data)
+sc_data<-transpose_dgRMatrix(sc_data)
+```
+```{r}
+sc_data <- createGiottoObject(
+  raw_exprs = sc_data,
+  instructions = instrs
+)
+sc_data <- normalizeGiotto(gobject = sc_data)
+sc_data <- calculateHVG(gobject = sc_data)
+```
+```{r}
+gene_metadata = fDataDT(sc_data)
+featgenes = gene_metadata[hvg == 'yes']$gene_ID
+sc_data <- runPCA(gobject = sc_data, genes_to_use = featgenes, scale_unit = F)
+signPCA(sc_data, genes_to_use = featgenes, scale_unit = F)
+```
+```{r}
+annots<-read.csv("SimulatedData/annots.csv")
+sc_data@cell_metadata$cell_type <- as.character(annots$cell_type)
+labels<-as.character(annots$cell_type)
+```
+```{r}
+markers = findMarkers_one_vs_all(gobject = sc_data,
+                                                  method = 'scran',
+                                                  expression_values = 'normalized',
+                                                  cluster_column = 'cell_type')
+```
+```{r}
+markers<-markers[markers$ranking<=100]
+de_genes<-unique(markers$genes)
+```
+```{r}
+signature_matrix<-makeSignMatrixDWLS(sc_data,cell_type_vector=labels,sign_gene=de_genes)
+```
+```{r}
+output <- runDWLSDeconv(visium_brain,sign_matrix = signature_matrix, n_cell = 5, return_gobject=FALSE)
+```
+
+
+
