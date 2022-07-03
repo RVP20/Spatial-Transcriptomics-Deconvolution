@@ -1,0 +1,90 @@
+---
+title: "Seurat Simulated Data DESTVI"
+output: html_notebook
+---
+
+```{r}
+library(Seurat)
+library(SeuratData)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(anndata)
+library(Matrix)
+library("SeuratDisk")
+library(dplyr)
+
+```
+```{r}
+setwd("/Users/tanushkumar/Dropbox/ST_Project/Data/exp1/")
+st<-read_h5ad("exp1.h5ad")
+sc<-read_h5ad("sc_data_filtered.h5ad")
+sc<-as.matrix(sc)
+
+```
+
+```{r}
+transpose_dgRMatrix <- function(inmat) {
+  if(class(inmat) != 'dgRMatrix')
+    stop('inmat is not of class dgRMatrix')
+  out <- new('dgCMatrix',
+             i=inmat@j,
+             p=inmat@p,
+             x=inmat@x,
+             Dim=rev(inmat@Dim),
+             Dimnames=rev(inmat@Dimnames)
+  )
+  out
+}      
+
+```
+
+```{r}
+st<-as.matrix(st)
+st<-transpose_dgRMatrix(st)
+sc<-transpose_dgRMatrix(sc)
+st<-CreateSeuratObject(st)
+```
+
+
+
+```{r}
+st<-RenameAssays(st, RNA="Spatial")
+plot1 <- VlnPlot(st, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot1
+```
+
+```{r}
+st<-SCTransform(st, assay="Spatial", verbose=FALSE)
+st<-RunPCA(st,assay="SCT",verbose=FALSE)
+st <- FindNeighbors(st, reduction = "pca", dims = 1:30)
+st <- FindClusters(st,verbose=FALSE)
+st<-RunUMAP(st,reduction="pca", dims=1:30)
+DimPlot(st, reduction="umap", label=TRUE)
+```
+
+```{r}
+sc <- CreateSeuratObject(counts = sc)
+sc<-SCTransform(sc,ncells=3000,verbose=FALSE)
+sc<-RunPCA(sc,verbose=FALSE)
+sc<-RunUMAP(sc,dims=1:30)
+```
+```{r}
+setwd("/Users/tanushkumar/Dropbox/ST_Project/Data/exp0/")
+annotations<-read.csv("Ann.csv")
+sc$subclass<-annotations$X0
+DimPlot(sc,group.by = 'subclass',label=TRUE)
+```
+```{r}
+anchors <- FindTransferAnchors(reference = sc, query = st, normalization.method = "SCT")
+output<- TransferData(anchorset = anchors, refdata =sc$subclass)
+```
+```{r}
+output<-as.matrix(output[,-1])
+#to_csv(output,"output_Seurat.csv")
+write.csv(output,"/Users/tanushkumar/Dropbox/ST_Project/output_Seurat.csv")
+
+```
+
+
+
